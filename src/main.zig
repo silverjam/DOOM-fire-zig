@@ -1,17 +1,15 @@
 // TEST YOUR (TTY) MIGHT: DOOM FIRE!
-// (c) 2022 const void*
+// (c) 2022, 2023, 2024 const void*
 //
 // Copy/paste as it helps!
 //
+const builtin = @import("builtin");
 const std = @import("std");
-const c = @cImport({
-    @cInclude("sys/ioctl.h");
-});
 
 const allocator = std.heap.page_allocator;
 
-const stdout = std.io.getStdOut().writer();
-const stdin = std.io.getStdIn().reader();
+var stdout: std.fs.File.Writer = undefined;
+var stdin: std.fs.File.Reader = undefined;
 
 ///////////////////////////////////
 // Tested on M1 osx12.1 + Artix Linux.
@@ -83,7 +81,7 @@ pub fn emitFmt(comptime s: []const u8, args: anytype) void {
 //// Settings
 
 // Get this value from libc.
-const TIOCGWINSZ = c.TIOCGWINSZ; // ioctl flag
+const TIOCGWINSZ = std.c.T.IOCGWINSZ; // ioctl flag
 
 //term size
 const TermSz = struct { height: usize, width: usize };
@@ -146,13 +144,29 @@ pub fn initColor() void {
 
 //get terminal size given a tty
 pub fn getTermSz(tty: std.posix.fd_t) !TermSz {
-    var winsz = c.winsize{ .ws_col = 0, .ws_row = 0, .ws_xpixel = 0, .ws_ypixel = 0 };
-    const rv = std.os.linux.ioctl(tty, TIOCGWINSZ, @intFromPtr(&winsz));
-    const err = std.posix.errno(rv);
-    if (rv == 0) {
-        return TermSz{ .height = winsz.ws_row, .width = winsz.ws_col };
+    if (builtin.os.tag == .windows) {
+        //Microsoft Windows Case
+        var info: win32.CONSOLE_SCREEN_BUFFER_INFO = undefined;
+        if (0 == win32.GetConsoleScreenBufferInfo(tty, &info)) switch (std.os.windows.kernel32.GetLastError()) {
+            else => |e| return std.os.windows.unexpectedError(e),
+        };
+        return TermSz{
+            .height = @intCast(info.srWindow.Bottom - info.srWindow.Top + 1),
+            .width = @intCast(info.srWindow.Right - info.srWindow.Left + 1),
+        };
     } else {
-        return std.posix.unexpectedErrno(err);
+        //Linux-MacOS Case
+        var winsz = std.c.winsize{ .ws_col = 0, .ws_row = 0, .ws_xpixel = 0, .ws_ypixel = 0 };
+        const rv = std.os.linux.ioctl(tty, TIOCGWINSZ, @intFromPtr(&winsz));
+        const err = std.posix.errno(rv);
+
+        if (rv >= 0) {
+            return TermSz{ .height = winsz.ws_row, .width = winsz.ws_col };
+        } else {
+            std.process.exit(0);
+            //TODO this is a pretty terrible way to handle issues...
+            return std.posix.unexpectedErrno(err);
+        }
     }
 }
 
@@ -227,6 +241,24 @@ pub fn checkTermSz() void {
             emitFmt("Screen may be too short - height is {d} and need {d}.", .{ term_sz.height, min_h });
         } else if (!w_ok and h_ok) {
             emitFmt("Screen may be too narrow - width is {d} and need {d}.", .{ term_sz.width, min_w });
+        } else if (term_sz.width == 0) {
+            // IOCTL succesfully failed!  We believe the call to retrieve terminal dimensions succeeded,
+            // however our structure is zero.
+            emit(bg[1]);
+            emit(fg[15]);
+            emitFmt("Call to retreive terminal dimensions may have failed" ++ nl ++
+                "Width is {d} (ZERO!) and we need {d}." ++ nl ++
+                "We will allocate 0 bytes of screen buffer, resulting in immediate failure.", .{ term_sz.width, min_w });
+            emit(color_reset);
+        } else if (term_sz.height == 0) {
+            // IOCTL succesfully failed!  We believe the call to retrieve terminal dimensions succeeded,
+            // however our structure is zero.
+            emit(bg[1]);
+            emit(fg[15]);
+            emitFmt("Call to retreive terminal dimensions may have failed" ++ nl ++
+                "Height is {d} (ZERO!) and we need {d}." ++ nl ++
+                "We will allocate 0 bytes of screen buffer, resulting in immediate failure.", .{ term_sz.height, min_h });
+            emit(color_reset);
         } else {
             emitFmt("Screen is too small - have {d} x {d} and need {d} x {d}", .{ term_sz.width, term_sz.height, min_w, min_h });
         }
@@ -652,6 +684,9 @@ pub fn showDoomFire() void {
 ///////////////////////////////////
 
 pub fn main() anyerror!void {
+    stdout = std.io.getStdOut().writer();
+    stdin = std.io.getStdIn().reader();
+
     try initTerm();
     defer complete();
 
@@ -659,3 +694,29 @@ pub fn main() anyerror!void {
     showTermCap();
     showDoomFire();
 }
+
+const win32 = struct {
+    pub const BOOL = i32;
+    pub const HANDLE = std.os.windows.HANDLE;
+    pub const COORD = extern struct {
+        X: i16,
+        Y: i16,
+    };
+    pub const SMALL_RECT = extern struct {
+        Left: i16,
+        Top: i16,
+        Right: i16,
+        Bottom: i16,
+    };
+    pub const CONSOLE_SCREEN_BUFFER_INFO = extern struct {
+        dwSize: COORD,
+        dwCursorPosition: COORD,
+        wAttributes: u16,
+        srWindow: SMALL_RECT,
+        dwMaximumWindowSize: COORD,
+    };
+    pub extern "kernel32" fn GetConsoleScreenBufferInfo(
+        hConsoleOutput: ?HANDLE,
+        lpConsoleScreenBufferInfo: ?*CONSOLE_SCREEN_BUFFER_INFO,
+    ) callconv(std.os.windows.WINAPI) BOOL;
+};

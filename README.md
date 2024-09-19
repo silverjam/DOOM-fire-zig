@@ -5,12 +5,14 @@
 
 The doom-fire algo can push upwards of 180k a frame - results may vary!  It is, to my surprise, a nice TTY stress test.
 
-As a comparable, this is the younger sibling of a node variant ( https://github.com/const-void/DOOM-fire-node ).
+As a comparison, this is the younger sibling of a node variant ( https://github.com/const-void/DOOM-fire-node ).
 
 # INSTALL
-Tested on OX Monterey / M1 w/zig 0.9...
+Tested on OX Sonoma 14.5 / M1 w/zig 0.13...
 
 EDIT: Now tested on Artix Linux - links against libc to get the size of the TTY.
+
+EDIT: 2024 - Now tested with Windows - Win32 Compatible, thank you [@marler8997](https://www.github.com/marler8997)!
 
 This means that the program does rely on libc, this shouldn't be a problem.
 
@@ -26,9 +28,13 @@ $ zig build run
 * kitty.app - great
 * Terminal.app - poor -- seems to drop framerates 
 * VS Code - great
+* Warp - great
 * Alacritty (artix linux) - great
+* Powershell/CMD 
 
 # Inspiration / Credits
+* Thanks to contributors for your support!
+ 
 * doom fire    - https://github.com/filipedeschamps/doom-fire-algorithm,  https://github.com/fabiensanglard/DoomFirePSX/blob/master/flames.html
 * color layout - https://en.wikipedia.org/wiki/ANSI_escape_code
 * ansi codes   - http://xfree86.org/current/ctlseqs.html
